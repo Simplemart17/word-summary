@@ -21,6 +21,8 @@ npm run start:lan
 
 The terminal prints an address such as `http://192.168.1.20:4747`. Open it on a phone that is on the same Wi-Fi. In this mode anyone on that network can open the app and use your Claude subscription through it, so use it at home, not on shared Wi-Fi. Plain `npm start` only answers on this computer.
 
+The reading carries on when the phone's screen is off, and the lock screen's play, pause and next controls work it. Because the phone then treats Selah like a music player, the ring/silent switch does not mute it. Switching to another app may still pause it; that is the phone's rule for web pages.
+
 ## What it does
 
 **Choosing a passage.** The Bible is divided into 2,680 sections: a story, a parable, a psalm, a step in an argument. Very short sections are joined to a neighbour and very long ones divided, so each is 5 to 30 verses. From "Choose a passage" you can:
@@ -85,6 +87,7 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 | `SELAH_REVIEW` | on | `off` skips the second check, halving the cost of a new reflection |
 | `SELAH_CLAUDE_BIN` | found automatically | Path to the `claude` executable |
 | `SELAH_VOICE` | full | `small` uses a 90 MB voice model that sounds slightly rougher |
+| `SELAH_LIBRARY` | `library/` | Another folder for history and saved reflections, for example when testing |
 
 `npm run dev` restarts the server when a file changes and does not open the browser.
 

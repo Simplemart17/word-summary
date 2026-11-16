@@ -808,15 +808,18 @@ dialog::backdrop {
     font-size: 1.375rem;
   }
 
+  /* The pinned bar lives inside the controls, so the controls as a whole have
+     to rank above the reading column or the text is drawn over the bar. */
+  .controls {
+    z-index: 3;
+  }
+
   .transport {
     position: fixed;
     inset: auto 0 0 0;
-    z-index: 2;
     flex-wrap: nowrap;
     padding: 0.75rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
-    background: color-mix(in oklab, var(--nave) 88%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--nave);
     border-top: 1px solid var(--rule);
   }
 

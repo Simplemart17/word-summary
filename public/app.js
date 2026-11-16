@@ -172,6 +172,7 @@ function showPassageError(message, choice) {
 function renderPassage(p) {
   document.body.dataset.view = 'reading';
   document.title = `${p.reference} | Selah`;
+  showOnLockScreen(p);
   $('welcome').hidden = true;
   $('passage').hidden = false;
   $('questions').hidden = true;
@@ -551,6 +552,7 @@ narrator.addEventListener('segment', ({ detail: segment }) => {
 narrator.addEventListener('state', ({ detail: s }) => {
   const speaking = s === 'speaking';
   $('toggle').textContent = speaking || s === 'waiting' ? 'Pause' : s === 'done' ? 'Listen again' : 'Listen';
+  if (media) media.playbackState = speaking || s === 'waiting' ? 'playing' : 'paused';
   ambience.duck(speaking);
   if (s === 'done') afterPassage();
 });
@@ -564,14 +566,40 @@ narrator.addEventListener('problem', ({ detail: reason }) => {
   setNote('status', `The reading stopped. ${reason} Press Listen to try again.`);
 });
 
+function listen() {
+  ambience.start(); // also wakes the music after the sleep timer
+  setNote('status', null);
+  narrator.play();
+}
+
 function toggle() {
-  if (narrator.state === 'speaking' || narrator.state === 'waiting') {
+  if (narrator.state === 'speaking' || narrator.state === 'waiting') narrator.pause();
+  else listen();
+}
+
+/* ---------- lock screen, headphones and media keys ---------- */
+
+// With the screen off, the phone's own play, pause and next controls work the reading.
+const media = 'mediaSession' in navigator ? navigator.mediaSession : null;
+if (media) {
+  const on = (action, handler) => {
+    try {
+      media.setActionHandler(action, handler);
+    } catch {
+      /* this browser does not offer that control */
+    }
+  };
+  on('play', listen);
+  on('pause', () => {
     narrator.pause();
-  } else {
-    ambience.start(); // also wakes the music after the sleep timer
-    setNote('status', null);
-    narrator.play();
-  }
+    ambience.sleep(1.5); // from a lock screen, pause means silence, music included
+  });
+  on('nexttrack', nextPassage);
+}
+
+function showOnLockScreen(p) {
+  if (!media || !window.MediaMetadata) return;
+  media.metadata = new MediaMetadata({ title: p.reference, artist: 'Selah', album: p.translation.name });
 }
 
 /* ---------- sleep timer ---------- */

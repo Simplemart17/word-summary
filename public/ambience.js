@@ -184,6 +184,57 @@ function harpRun(instrument, note, degree, when) {
   for (let i = 0; i < count; i++) strike(instrument, hz(note(run[first + i])), when + i * gap, STRING);
 }
 
+/* ---------- keeping the sound going when a phone's screen turns off ---------- */
+
+// Two seconds of silence as a WAV file.
+function silentTrack() {
+  const samples = 16000;
+  const view = new DataView(new ArrayBuffer(44 + samples));
+  const text = (at, string) => [...string].forEach((ch, i) => view.setUint8(at + i, ch.charCodeAt(0)));
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + samples, true);
+  text(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 8000, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  text(36, 'data');
+  view.setUint32(40, samples, true);
+  for (let i = 0; i < samples; i++) view.setUint8(44 + i, 128); // the middle of the range is silence
+  return URL.createObjectURL(new Blob([view], { type: 'audio/wav' }));
+}
+
+// A phone stops a page's sound when the screen locks unless the page is
+// playing what it regards as media, and sound made with the Web Audio API,
+// as all of Selah's is, does not count. So while Selah is sounding, a silent
+// audio file is kept playing beside it, and the browser is asked for a
+// "playback" audio session where it offers one. Either is enough to be
+// treated like a music player, which also means the ring/silent switch no
+// longer mutes the reading.
+class Holder {
+  hold() {
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch {
+      /* an older browser: the silent track below still does the job */
+    }
+    if (!this.track) {
+      this.track = new Audio(silentTrack());
+      this.track.loop = true;
+      this.track.preload = 'auto';
+      this.track.disableRemotePlayback = true;
+    }
+    this.track.play().catch(() => {});
+  }
+
+  release() {
+    this.track?.pause();
+  }
+}
+
 /* ---------- live ---------- */
 
 export class Ambience {
@@ -201,6 +252,15 @@ export class Ambience {
     this.bands = [0, 0, 0];
     this.peaks = [0.02, 0.02, 0.02];
     this.voiceSmooth = 0;
+    this.holder = new Holder();
+
+    // A call, or another app taking the speaker, can leave the sound stopped.
+    // Pick it up again when the page is looked at.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && this.running && this.ctx.state !== 'running') {
+        this.ctx.resume().catch(() => {});
+      }
+    });
   }
 
   get available() {
@@ -212,7 +272,8 @@ export class Ambience {
     if (!this.available) return;
     if (!this.ctx) this.#build();
     clearTimeout(this.sleepTimer);
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.holder.hold();
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
     if (!this.running) {
       this.running = true;
       this.#applyVolume(3);
@@ -234,6 +295,7 @@ export class Ambience {
       clearTimeout(this.extraTimer);
       this.sounding = [];
       this.ctx.suspend();
+      this.holder.release();
     }, seconds * 1000);
   }
 

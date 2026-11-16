@@ -7,7 +7,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), 'library');
+// SELAH_LIBRARY points this at another folder, which is how tests keep away from your own data.
+const ROOT = process.env.SELAH_LIBRARY || join(dirname(fileURLToPath(import.meta.url)), 'library');
 const STATE = join(ROOT, 'state.json');
 const REFLECTIONS = join(ROOT, 'reflections');
 const HISTORY_MAX = 500;
