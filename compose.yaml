@@ -16,6 +16,8 @@ services:
       SELAH_PASSWORD: ${SELAH_PASSWORD:?Set SELAH_PASSWORD in .env (at least 10 characters). The tunnel makes Selah public.}
       # From "claude setup-token". Without it the app runs but cannot write reflections.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # Optional: adds the translations your API.Bible key can reach.
+      API_BIBLE_KEY: ${API_BIBLE_KEY:-}
       SELAH_MODEL: ${SELAH_MODEL:-opus}
       SELAH_EFFORT: ${SELAH_EFFORT:-medium}
       SELAH_REVIEW: ${SELAH_REVIEW:-on}

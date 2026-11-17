@@ -87,7 +87,20 @@ const respell = (() => {
   return (words) => words.replace(pattern, (name) => entries[name]);
 })();
 
-const cache = new Map(); // "voice|speed|text" -> WAV buffer
+// Audio already made, so a second listen is instant. It is held in memory
+// only and dropped after fourteen days, the same as fetched Bible text,
+// because the words that were spoken are part of what is held.
+const CACHE_MS = 14 * 86_400_000;
+const cache = new Map(); // "voice|speed|text" -> { at, wav }
+const cached = (key) => {
+  const entry = cache.get(key);
+  if (entry && Date.now() - entry.at < CACHE_MS) return entry.wav;
+  cache.delete(key);
+  return null;
+};
+setInterval(() => {
+  for (const [key, entry] of cache) if (Date.now() - entry.at >= CACHE_MS) cache.delete(key);
+}, 3_600_000).unref();
 let tail = Promise.resolve(); // one piece at a time, in the order asked for
 
 // Returns a WAV buffer, or null if the job was cancelled before its turn came.
@@ -95,14 +108,16 @@ export function speak(text, voice, speed = SPEED.normal, job = {}) {
   const pace = Math.round(Math.min(SPEED.max, Math.max(SPEED.min, Number(speed) || SPEED.normal)) * 100) / 100;
   const words = respell(text);
   const key = `${voice}|${pace}|${words}`;
-  if (cache.has(key)) return Promise.resolve(cache.get(key));
+  const ready = cached(key);
+  if (ready) return Promise.resolve(ready);
 
   const run = tail.then(async () => {
     if (job.cancelled) return null;
-    if (cache.has(key)) return cache.get(key);
+    const made = cached(key); // by an earlier request for the same words
+    if (made) return made;
     await warm();
     const wav = await ask({ type: 'speak', text: words, voice, speed: pace });
-    cache.set(key, wav);
+    cache.set(key, { at: Date.now(), wav });
     if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
     return wav;
   });

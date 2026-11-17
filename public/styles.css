@@ -389,6 +389,10 @@ p {
   text-wrap: pretty;
 }
 
+.copyright {
+  margin-top: 1.75rem;
+}
+
 .verses.lines .verse {
   display: block;
   padding-left: 1.6em;

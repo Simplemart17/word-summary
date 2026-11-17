@@ -225,9 +225,14 @@ function findBook(words) {
   return tidy.length >= 3 && starting.length === 1 ? starting[0] : -1;
 }
 
+// Whether these words name a book of the Bible, in full or abbreviated.
+export const isBookName = (words) => findBook(words) >= 0;
+
 // Turns "John 3:16-21", "ps 23", "Jude 5-9" or "Romans" into coordinates.
 // Returns { coords }, { book } (a whole multi-chapter book), or { error }.
-export function parseReference(input) {
+// The verses are looked for in the translation given, since translations do
+// not all number every chapter alike.
+export function parseReference(input, text = translation('web')) {
   const match = /^\s*((?:[1-3](?:st|nd|rd)?|i{1,3}|first|second|third)?\s*[a-z][a-z .]*?)\s*(?:(\d+)(?:\s*[:.]\s*(\d+))?(?:\s*[-–—]\s*(\d+))?)?\s*$/i.exec(
     input ?? '',
   );
@@ -236,9 +241,9 @@ export function parseReference(input) {
   const b = findBook(bookWords);
   if (b < 0) return { error: `No book of the Bible matches "${bookWords.trim()}".` };
 
-  const book = translation('web').books[b];
+  const book = text.books[b];
   const single = book.chapters.length === 1;
-  if (first === undefined) return single ? whole(b, 0) : { book: b };
+  if (first === undefined) return single ? whole(text, b, 0) : { book: b };
 
   let c;
   let from;
@@ -254,20 +259,23 @@ export function parseReference(input) {
   } else if (last !== undefined) {
     return { error: 'Choose one chapter at a time, such as "Romans 8" or "Romans 8:28-39".' };
   } else {
-    return whole(b, Number(first) - 1);
+    return whole(text, b, Number(first) - 1);
   }
 
   const chapter = book.chapters[c];
   if (!chapter) return { error: `${book.name} has ${book.chapters.length} chapters.` };
   if (to < from) [from, to] = [to, from];
   const found = chapter.filter(([n]) => n >= from && n <= to);
-  if (!found.length) return { error: `${label({ b, c, from: 1, to: 999 })} has ${chapter.length} verses.` };
+  if (!found.length) {
+    const title = describe(text, { b, c, from: 1, to: 999 }).title;
+    return { error: `${title} has ${chapter.at(-1)[0]} verses in the ${text.name}.` };
+  }
   if (found.length > EXPLICIT_MAX) return tooLong(found.length);
   return { coords: { b, c, from: found[0][0], to: found.at(-1)[0] } };
 }
 
-function whole(b, c) {
-  const book = translation('web').books[b];
+function whole(text, b, c) {
+  const book = text.books[b];
   const chapter = book.chapters[c];
   if (!chapter) return { error: `${book.name} has ${book.chapters.length} chapters.` };
   if (chapter.length > EXPLICIT_MAX) return tooLong(chapter.length);

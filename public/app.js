@@ -2,6 +2,7 @@ import { RoseWindow, GENRES, hashString } from './window.js';
 import { Ambience, STYLES } from './ambience.js';
 import { Narrator, sentences, spokenReference } from './narrator.js';
 import { saveRecording } from './recording.js';
+import { reportShown } from './shown.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -40,8 +41,9 @@ const state = {
   setup: null,
   plan: store.get('plan', 'surprise'), // what "Next passage" does: surprise | order
   scope: store.get('scope', 'all'),
-  verseEls: new Map(),
-  verseSegment: new Map(),
+  verseEls: new Map(), // verse number -> its element
+  verseSegment: new Map(), // verse number -> where the reading of it begins
+  blockOf: new Map(), // verse number -> first verse of the block it is printed in
   narrated: [], // verses lit because the voice is on them
   hovered: null, // verses lit because the pointer or focus is on a lesson
 };
@@ -59,7 +61,8 @@ const rose = new RoseWindow($('window'), $('bloom'), {
   levels: () => ambience.levels(),
   voiceLevel: () => ambience.voiceLevel(),
   onHover: (verse) => {
-    for (const [n, el] of state.verseEls) el.classList.toggle('peek', n === verse);
+    const peeked = state.verseEls.get(verse);
+    for (const el of new Set(state.verseEls.values())) el.classList.toggle('peek', el === peeked);
     $('window').title = verse == null ? '' : `Read from verse ${verse}`;
   },
   onPick: (verse) => readFrom(verse),
@@ -102,6 +105,7 @@ function announce(message) {
 }
 
 const coordsOf = (p) => ({ translation: p.translation.id, b: p.b, c: p.c, from: p.from, to: p.to });
+
 const number = (n) => n.toLocaleString();
 
 function localDate() {
@@ -140,6 +144,7 @@ async function openPassage(choice) {
   state.passage = passage;
   setNote('status', null);
   if (passage.startedAgain) announce('You have now been given every passage in that part of the Bible, so the round begins again.');
+  else if (passage.notice) announce(passage.notice);
   showProgress(passage);
 
   const segments = renderPassage(passage);
@@ -198,18 +203,34 @@ function renderPassage(p) {
   const segments = [{ kind: 'reference', text: `${p.spoken}.`, el: $('ref'), pauseAfter: 600 }];
   state.verseEls.clear();
   state.verseSegment.clear();
+  state.blockOf.clear();
   const verses = $('verses');
   verses.className = `verses ${p.genre === 'wisdom' ? 'lines' : 'prose'}`;
   verses.replaceChildren(
     ...p.verses.map((v, i) => {
-      const label = h('button', { class: 'vn', type: 'button', 'aria-label': `Read from verse ${v.n}`, onclick: () => readFrom(v.n) }, String(v.n));
+      // Some translations print several verses as one block, numbered "16–18".
+      const through = v.through ?? v.n;
+      const numbers = through > v.n ? `${v.n}–${through}` : String(v.n);
+      const label = h('button', { class: 'vn', type: 'button', 'aria-label': `Read from verse ${numbers}`, onclick: () => readFrom(v.n) }, numbers);
       const el = h('span', { class: 'verse' }, label, v.text, ' ');
-      state.verseEls.set(v.n, el);
-      state.verseSegment.set(v.n, segments.length);
-      segments.push({ kind: 'verse', text: v.text, el, verse: v.n, pauseAfter: i === count - 1 ? 1100 : 220 });
+      for (let n = v.n; n <= through; n++) {
+        state.verseEls.set(n, el);
+        state.verseSegment.set(n, segments.length);
+        state.blockOf.set(n, v.n);
+      }
+      // spoken is the verse without any cross-references printed inside it
+      segments.push({ kind: 'verse', text: v.spoken ?? v.text, el, verse: v.n, pauseAfter: i === count - 1 ? 1100 : 220 });
       return el;
     }),
   );
+
+  // A translation in copyright comes from API.Bible with its publisher's notice.
+  const licensed = Boolean(p.translation.licensed);
+  $('copyright').hidden = !licensed;
+  $('copyright').textContent = licensed
+    ? `${p.translation.copyright} Supplied by API.Bible. Its licence does not allow this text to be copied or given to Claude, so the reflection below is written from the same verses in the World English Bible, and saving as audio is switched off.`
+    : '';
+  if (licensed) reportShown(p.fumsToken);
 
   window.scrollTo({ top: 0 });
   return segments;
@@ -250,7 +271,7 @@ async function requestReflection(ticket) {
     const segments = renderReflection(reflection, review);
     $('thread').replaceChildren(...questions.map((entry) => renderExchange(entry).el));
     $('questions').hidden = false;
-    $('save-audio').disabled = false;
+    $('save-audio').disabled = Boolean(p.translation.licensed);
     rose.reveal();
     narrator.append(segments, { expectMore: false });
   } catch (err) {
@@ -508,8 +529,10 @@ $('show-favourites').addEventListener('click', () => ((showing = 'favourites'), 
 
 function applyFlare() {
   const lit = state.hovered ?? state.narrated;
-  rose.setFlare(lit);
-  for (const [n, el] of state.verseEls) el.classList.toggle('cited', lit.includes(n));
+  // the window has one pane per printed block, known by its first verse
+  rose.setFlare(lit.map((n) => state.blockOf.get(n) ?? n));
+  const cited = new Set(lit.map((n) => state.verseEls.get(n)));
+  for (const el of new Set(state.verseEls.values())) el.classList.toggle('cited', cited.has(el));
 }
 
 function setHovered(verses) {
@@ -805,9 +828,27 @@ const voicesReady = request('/api/voices').then(
   (err) => noVoice(err.message),
 );
 
+// The translations fetched from API.Bible can arrive a little after the rest.
+// When they do, the list is filled in again and a remembered choice restored.
+function awaitTranslations(tries = 6) {
+  if (tries === 0) return;
+  setTimeout(async () => {
+    try {
+      const { translations, translationsPending } = await request('/api/translations');
+      const wanted = store.get('translation', 'web');
+      const current = state.passage ? reading.translation : wanted; // do not switch under a passage being read
+      reading.translation = fill($('translation'), translations, current);
+      if (translationsPending) awaitTranslations(tries - 1);
+    } catch {
+      awaitTranslations(tries - 1);
+    }
+  }, 4000);
+}
+
 const setupReady = request('/api/setup').then((setup) => {
   state.setup = setup;
   reading.translation = fill($('translation'), setup.translations, reading.translation);
+  if (setup.translationsPending) awaitTranslations();
   reading.length = fill($('length'), setup.lengths, reading.length);
   reading.tradition = fill($('tradition'), setup.traditions, reading.tradition);
   pace.min = setup.pace.min;

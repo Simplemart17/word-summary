@@ -4,6 +4,7 @@
 //   https://api.getbible.net/v2/web.json   World English Bible
 //   https://api.getbible.net/v2/kjv.json   King James Version
 import { readFileSync, writeFileSync } from 'node:fs';
+import { supplement } from './supplement.mjs';
 
 const [input, output] = process.argv.slice(2);
 if (!input || !output) {
@@ -30,6 +31,7 @@ const out = {
   })),
 };
 
+supplement(out); // a few verses the source lacks; see supplement.mjs
 writeFileSync(output, JSON.stringify(out));
 const verses = out.books.reduce((n, b) => n + b.chapters.reduce((m, c) => m + c.length, 0), 0);
 console.log(`${out.name}: ${out.books.length} books, ${verses} verses -> ${output}`);

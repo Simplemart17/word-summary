@@ -33,6 +33,17 @@ import {
 import { LENGTHS, TRADITIONS, lengthOf, traditionOf } from './prompt.js';
 import { CLAUDE_BIN, EFFORT, MODEL, REVIEW, answerQuestion, reflectionFor } from './reflect.js';
 import { SPEED, VOICES, speak, voiceStatus, warm } from './voice.js';
+import {
+  HAS_KEY,
+  isOnline,
+  knownTranslations,
+  lookupProblem,
+  onlineName,
+  onlinePassage,
+  onlineTranslations,
+  reportShown,
+  stillLooking,
+} from './online.js';
 import { OPEN_FILES, PASSWORD_MIN, PASSWORD_TOO_SHORT, PROTECTED, login, signedIn } from './auth.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
@@ -62,22 +73,23 @@ function hash(text) {
 
 const progress = () => ({ read: Math.min(readCount(), units().length), total: units().length });
 
+// Choosing a passage changes nothing by itself. Whatever it would change (the
+// place in the reading plan, a round of reading starting again) is handed
+// back as commit(), which is called only once the passage has really been
+// opened. A passage that fails to open therefore leaves everything as it was.
+
 // A random unit from the scope that has not been read yet. When everything in
 // the scope has been read, the round starts again.
 function surprise(scope) {
   const pool = units().filter(inScope(scope));
   if (!pool.length) return { error: 'Nothing matches that choice.' };
-  let fresh = pool.filter((unit) => !hasRead(keyOf(unit)));
-  let startedAgain = false;
-  if (!fresh.length) {
-    forgetRead(pool.map(keyOf));
-    fresh = pool;
-    startedAgain = true;
-  }
-  return { coords: fresh[rand(fresh.length)], startedAgain };
+  const fresh = pool.filter((unit) => !hasRead(keyOf(unit)));
+  if (fresh.length) return { coords: fresh[rand(fresh.length)] };
+  return { coords: pool[rand(pool.length)], startedAgain: true, commit: () => forgetRead(pool.map(keyOf)) };
 }
 
-function choose(body) {
+// text is the translation a typed reference is looked up in.
+function choose(body, text) {
   const all = units();
   switch (body.mode) {
     case 'today': {
@@ -87,11 +99,10 @@ function choose(body) {
     case 'order': {
       const startBook = Number.isInteger(body.startBook) ? all.findIndex((unit) => unit.b === body.startBook) : -1;
       const index = (startBook >= 0 ? startBook : planPosition()) % all.length;
-      setPlanPosition((index + 1) % all.length);
-      return { coords: all[index] };
+      return { coords: all[index], commit: () => setPlanPosition((index + 1) % all.length) };
     }
     case 'reference': {
-      const found = parseReference(body.reference);
+      const found = parseReference(body.reference, text);
       if (found.error) return found;
       return found.coords ? { coords: found.coords } : surprise(`book:${found.book}`);
     }
@@ -111,14 +122,32 @@ const unitsWithin = (passage) =>
     .filter((u) => u.b === passage.b && u.c === passage.c && u.from >= passage.from && u.to <= passage.to)
     .map(keyOf);
 
+// A translation fetched from API.Bible is shown and read aloud, and that is
+// all: its licence does not cover copying it or handing it to an AI. So for
+// the reflection, the questions and the saved lists, the same verses in the
+// World English Bible stand in for it.
+const studyTranslation = (id) => (isOnline(id) ? 'web' : id);
+
 function passageAt(body) {
-  const t = translation(body.translation ?? 'web');
+  const t = translation(studyTranslation(body.translation ?? 'web'));
   if (!t) return { error: 'Unknown translation.' };
   const coords = Object.fromEntries(['b', 'c', 'from', 'to'].map((k) => [k, Number(body[k])]));
   if (Object.values(coords).some((n) => !Number.isInteger(n) || n < 0)) return { error: 'Unknown passage.' };
   const passage = describe(t, coords);
   if (!passage || passage.verses.length > EXPLICIT_MAX) return { error: 'Unknown passage.' };
   return { passage };
+}
+
+// The translations on offer. The ones in the app are always there; the ones
+// from API.Bible are added as soon as it has answered, and the page is not
+// kept waiting for that beyond a moment.
+async function translationsNow() {
+  const moment = new Promise((done) => setTimeout(done, 1200));
+  const online = await Promise.race([onlineTranslations(), moment.then(knownTranslations)]);
+  return {
+    translations: [...TRANSLATIONS, ...online.map(({ id, name }) => ({ id, name }))],
+    translationsPending: stillLooking(),
+  };
 }
 
 const optionsFrom = (body) => ({ length: lengthOf(body.length).id, tradition: traditionOf(body.tradition) });
@@ -221,9 +250,9 @@ async function serveStatic(req, res, pathname) {
 
 const routes = {
   // Everything the page needs to draw its choices.
-  'GET /api/setup': (req, res) =>
+  'GET /api/setup': async (req, res) =>
     sendJson(res, 200, {
-      translations: TRANSLATIONS,
+      ...(await translationsNow()),
       books: books(),
       lengths: LENGTHS.map(({ id, label }) => ({ id, label })),
       traditions: TRADITIONS.map(({ id, label }) => ({ id, label })),
@@ -234,6 +263,25 @@ const routes = {
       audio: ENCODER ? 'm4a' : 'wav',
     }),
 
+  // For the page to ask again when the first answer came before API.Bible's did.
+  'GET /api/translations': async (req, res) => sendJson(res, 200, await translationsNow()),
+
+  // The page reports to API.Bible itself that a passage was shown. When it
+  // cannot, because its reporting script was blocked, it asks for that here.
+  'POST /api/shown': async (req, res) => {
+    const body = await readBody(req);
+    const tokens = (Array.isArray(body.tokens) ? body.tokens : []).filter((t) => typeof t === 'string' && /^[\w-]{20,800}$/.test(t)).slice(0, 20);
+    const id = (value) => (typeof value === 'string' && /^[\w-]{8,64}$/.test(value) ? value : '');
+    if (!tokens.length || !id(body.device) || !id(body.session)) return sendJson(res, 400, { error: 'Nothing to report.' });
+    try {
+      await reportShown(tokens, id(body.device), id(body.session));
+      sendJson(res, 200, { reported: tokens.length });
+    } catch (err) {
+      console.error(`[API.Bible] ${err.message}`);
+      sendJson(res, 502, { error: err.message });
+    }
+  },
+
   'GET /api/voices': (req, res) => sendJson(res, 200, voiceStatus()),
 
   'GET /api/library': (req, res) => sendJson(res, 200, { ...lists(), progress: progress() }),
@@ -241,16 +289,40 @@ const routes = {
   // Chooses a passage, notes that it was opened, and returns it.
   'POST /api/open': async (req, res) => {
     const body = await readBody(req);
-    const t = translation(body.translation ?? 'web');
+    const id = body.translation ?? 'web';
+    const t = translation(studyTranslation(id));
     if (!t) return sendJson(res, 400, { error: 'Unknown translation.' });
-    const chosen = choose(body);
+    const chosen = choose(body, t);
     if (chosen.error) return sendJson(res, 400, { error: chosen.error });
     const passage = describe(t, chosen.coords);
-    if (!passage || passage.verses.length > EXPLICIT_MAX) return sendJson(res, 404, { error: 'Unknown passage.' });
+    if (!passage || passage.verses.length > EXPLICIT_MAX) {
+      // most likely verses that another translation numbers differently
+      return sendJson(res, 404, { error: `Those verses are not in the ${t.name} under that numbering. Choose the passage again in this translation.` });
+    }
 
+    let notice = '';
+    if (isOnline(id)) {
+      try {
+        const toChapterEnd = passage.to === t.books[passage.b].chapters[passage.c].at(-1)[0];
+        const fetched = await onlinePassage(id, chosen.coords, { toChapterEnd });
+        passage.translation = { id, name: fetched.name, licensed: true, copyright: fetched.copyright };
+        passage.verses = fetched.verses;
+        passage.fumsToken = fetched.fumsToken;
+      } catch (err) {
+        console.error(`[API.Bible] ${passage.reference}: ${err.message}`);
+        // Trying again will not help if the translation simply lacks these
+        // verses, and would hold up reading in order for good. Show them in
+        // the World English Bible and say so.
+        if (!err.missing) return sendJson(res, 502, { error: err.message });
+        notice = `The ${onlineName(id)} has no text for these verses, so they are shown in the ${t.name}.`;
+      }
+    }
+
+    chosen.commit?.();
     recordOpened(passage, unitsWithin(passage));
     sendJson(res, 200, {
       ...passage,
+      notice,
       favourite: isFavourite(passage.key),
       isUnit: indexOfUnit(passage) >= 0,
       startedAgain: Boolean(chosen.startedAgain),
@@ -350,6 +422,12 @@ server.listen(PORT, HOST, () => {
     if (!PROTECTED) console.log('Anyone on this network can open that address and use your Claude subscription through it.');
   }
   console.log(PROTECTED ? 'Password: required to open it' : 'Password: none set');
+  if (HAS_KEY) {
+    onlineTranslations().then((list) => {
+      if (lookupProblem()) console.log('API.Bible: the extra translations are not available yet; it will be asked again in five minutes');
+      else console.log(`API.Bible: ${list.length ? list.map((t) => t.name).join(', ') : 'the key reaches none of the extra translations'}`);
+    });
+  }
   console.log(`Reflections: Claude Code CLI (${CLAUDE_BIN}), model "${MODEL}", effort "${EFFORT}", second check ${REVIEW ? 'on' : 'off'}`);
 
   const began = Date.now();

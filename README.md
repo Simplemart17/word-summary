@@ -44,6 +44,32 @@ Open that address on any device and sign in. The sign-in lasts thirty days on ea
 - The app is copied into the image when it is built, so after changing any file run `npm run docker:up` again.
 - Anyone with both the address and the password can use your Claude subscription through it. Keep both to yourself, and change the password in `.env` (then `npm run docker:up`) if it gets out; that signs every device out.
 
+### More translations, with an API.Bible key
+
+The World English Bible and the King James Version are kept in the app because they are in the public domain. Translations still in copyright cannot be, but with your own free key from [API.Bible](https://api.bible) Selah fetches them a passage at a time. Put the key in `.env`:
+
+```
+API_BIBLE_KEY=your-key
+```
+
+and start Selah again (`npm start`, or `npm run docker:up`). Whichever of the New King James Version, New International Version, Amplified Bible and The Message your key can reach then appear under Translation in Settings. The terminal prints which ones it found.
+
+API.Bible's licence sets conditions, and Selah keeps to them this way:
+
+- The publisher's copyright notice is shown under every such passage.
+- The text, and the audio made from it, is held in memory for at most fourteen days and is never written to disk. Your history keeps only the reference.
+- The text is never sent to Claude. The reflection and answers to questions are written from the same verses in the World English Bible, so they are the same ones you get when reading that translation and cost nothing extra.
+- "Save as audio" is switched off for these translations, because a saved file would be a copy.
+- Each time a passage is shown the page tells API.Bible, as the licence requires. This loads a small script from `api.bible`; if that script is blocked, the report is sent through the Selah server instead.
+
+The passage is still read aloud. The licence is for personal, non-commercial use.
+
+A few things follow from the text coming from elsewhere:
+
+- Passages are marked out in the World English Bible's verse numbers. Where a translation numbers the end of a chapter differently, a passage that runs to the end of the chapter is read to the end in that translation too. A reference typed in is looked up in the translation you are reading; with one of these translations, it is looked up in the World English Bible.
+- If a translation has no text for the verses asked for, they are shown in the World English Bible, with a note saying so.
+- If API.Bible cannot be reached, the two translations kept in the app go on working, and nothing about your reading progress changes when a passage fails to open.
+
 ## What it does
 
 **Choosing a passage.** The Bible is divided into 2,680 sections: a story, a parable, a psalm, a step in an argument. Very short sections are joined to a neighbour and very long ones divided, so each is 5 to 30 verses. From "Choose a passage" you can:
@@ -89,6 +115,7 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 | --- | --- |
 | `server.js` | Serves the page and answers its requests |
 | `scripture.js` | The Bible text, its sections, and finding a passage |
+| `online.js` | Translations fetched from API.Bible with your key |
 | `reflect.js` | Writing, checking and saving reflections; answering questions |
 | `prompt.js` | Everything Claude is told |
 | `library.js` | History, favourites, reading progress and saved reflections |
@@ -97,7 +124,7 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 | `Dockerfile`, `compose.yaml`, `.env.example` | Running in Docker behind a Cloudflare tunnel |
 | `pronunciations.json` | Respellings for names the voice gets wrong |
 | `data/` | The two translations and the section breaks |
-| `public/` | The page: `app.js`, the window, the music, the narrator, the recorder |
+| `public/` | The page: `app.js`, the window, the music, the narrator, the recorder, usage reporting |
 | `library/` | Your own data, created on first use and not kept in git |
 
 ## Settings in the environment
@@ -110,6 +137,7 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 | `SELAH_REVIEW` | on | `off` skips the second check, halving the cost of a new reflection |
 | `SELAH_CLAUDE_BIN` | found automatically | Path to the `claude` executable |
 | `SELAH_VOICE` | full | `small` uses a 90 MB voice model that sounds slightly rougher |
+| `API_BIBLE_KEY` | none | Adds the copyrighted translations your API.Bible key can reach; also read from `.env` |
 | `SELAH_PASSWORD` | none | Ask for this password before showing anything (at least 10 characters) |
 | `HOST` | this computer only | Address to listen on; the container sets `0.0.0.0` |
 | `SELAH_LIBRARY` | `library/` | Another folder for history and saved reflections, for example when testing |
@@ -124,4 +152,4 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 
 ## Sources
 
-The World English Bible and the King James Version are in the public domain; the text came from the [getbible.net](https://getbible.net) v2 API (`scripts/build-data.mjs`). The section breaks are the positions of the headings in the Berean Standard Bible, also in the public domain (`scripts/build-sections.mjs`); only the positions are used, not its text.
+The World English Bible and the King James Version are in the public domain; the text came from the [getbible.net](https://getbible.net) v2 API (`scripts/build-data.mjs`). That copy of the World English Bible lacks Romans 14:24-26, which `scripts/supplement.mjs` supplies. The section breaks are the positions of the headings in the Berean Standard Bible, also in the public domain (`scripts/build-sections.mjs`); only the positions are used, not its text.
