@@ -24,6 +24,9 @@ export const EFFORT = process.env.SELAH_EFFORT || 'medium';
 // Every reflection is read a second time before it is shown. SELAH_REVIEW=off skips that.
 export const REVIEW = process.env.SELAH_REVIEW !== 'off';
 const TIMEOUT_MS = 180_000;
+const NOT_SIGNED_IN = process.env.SELAH_IN_DOCKER
+  ? 'Claude is not signed in inside the container. Run "claude setup-token" on your computer, put the token in .env as CLAUDE_CODE_OAUTH_TOKEN, and run "npm run docker:up" again.'
+  : 'Claude Code is not signed in. Run "claude" in a terminal, sign in, and try again.';
 const QUESTION_MAX = 600;
 
 export const CLAUDE_BIN = (() => {
@@ -78,10 +81,13 @@ function askClaude({ system, schema, prompt }) {
       try {
         result = JSON.parse(stdout);
       } catch {
-        return reject(new Error((stderr || stdout).trim().slice(0, 400) || 'Claude returned nothing.'));
+        const said = (stderr || stdout).trim().slice(0, 400);
+        if (/log ?in|authenticat|api key|oauth|credential/i.test(said)) return reject(new Error(NOT_SIGNED_IN));
+        return reject(new Error(said || 'Claude returned nothing.'));
       }
       if (result.is_error || !result.structured_output) {
         const said = typeof result.result === 'string' ? result.result.trim().slice(0, 400) : '';
+        if (/log ?in|authenticat|api key|oauth|credential/i.test(said)) return reject(new Error(NOT_SIGNED_IN));
         return reject(new Error(said || 'Claude did not return an answer.'));
       }
       resolve(result.structured_output);

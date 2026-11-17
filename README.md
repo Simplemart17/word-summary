@@ -23,6 +23,27 @@ The terminal prints an address such as `http://192.168.1.20:4747`. Open it on a 
 
 The reading carries on when the phone's screen is off, and the lock screen's play, pause and next controls work it. Because the phone then treats Selah like a music player, the ring/silent switch does not mute it. Switching to another app may still pause it; that is the phone's rule for web pages.
 
+### From anywhere, in Docker through a Cloudflare tunnel
+
+This runs Selah in a container and gives it a public `https` address. Because that address is on the open internet, Selah asks for a password before showing anything, and the container will not start without one.
+
+1. Copy `.env.example` to `.env` and set `SELAH_PASSWORD` (at least 10 characters).
+2. On your own computer run `claude setup-token`, and paste the token it prints into `.env` as `CLAUDE_CODE_OAUTH_TOKEN`. This is what lets the container use your Claude subscription. Without it everything works except new reflections.
+3. Start it and get the address:
+
+```sh
+npm run docker:up     # build and start; the first build takes a few minutes
+npm run docker:url    # print the public address
+```
+
+Open that address on any device and sign in. The sign-in lasts thirty days on each device.
+
+- `npm run docker:logs` shows what the app is doing, and `npm run docker:down` stops it and closes the tunnel.
+- The address is a random `trycloudflare.com` one and **changes every time the tunnel starts**. For a fixed address on your own domain, create a tunnel in the Cloudflare dashboard, point its public hostname at `http://selah:4747`, put its token in `.env` as `TUNNEL_TOKEN`, and set `COMPOSE_PROFILES=named`.
+- Your history and saved reflections stay in `library/` on your computer, shared with the ordinary `npm start`.
+- The app is copied into the image when it is built, so after changing any file run `npm run docker:up` again.
+- Anyone with both the address and the password can use your Claude subscription through it. Keep both to yourself, and change the password in `.env` (then `npm run docker:up`) if it gets out; that signs every device out.
+
 ## What it does
 
 **Choosing a passage.** The Bible is divided into 2,680 sections: a story, a parable, a psalm, a step in an argument. Very short sections are joined to a neighbour and very long ones divided, so each is 5 to 30 verses. From "Choose a passage" you can:
@@ -72,6 +93,8 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 | `prompt.js` | Everything Claude is told |
 | `library.js` | History, favourites, reading progress and saved reflections |
 | `voice.js`, `voice-worker.js` | The reading voice, run on its own thread |
+| `auth.js` | The password sign-in, used when `SELAH_PASSWORD` is set |
+| `Dockerfile`, `compose.yaml`, `.env.example` | Running in Docker behind a Cloudflare tunnel |
 | `pronunciations.json` | Respellings for names the voice gets wrong |
 | `data/` | The two translations and the section breaks |
 | `public/` | The page: `app.js`, the window, the music, the narrator, the recorder |
@@ -87,6 +110,8 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 | `SELAH_REVIEW` | on | `off` skips the second check, halving the cost of a new reflection |
 | `SELAH_CLAUDE_BIN` | found automatically | Path to the `claude` executable |
 | `SELAH_VOICE` | full | `small` uses a 90 MB voice model that sounds slightly rougher |
+| `SELAH_PASSWORD` | none | Ask for this password before showing anything (at least 10 characters) |
+| `HOST` | this computer only | Address to listen on; the container sets `0.0.0.0` |
 | `SELAH_LIBRARY` | `library/` | Another folder for history and saved reflections, for example when testing |
 
 `npm run dev` restarts the server when a file changes and does not open the browser.

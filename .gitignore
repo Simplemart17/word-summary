@@ -1,5 +1,7 @@
 node_modules/
 library/
+.env
 .old/
 .playwright-mcp/
 .DS_Store
+.history

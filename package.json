@@ -7,7 +7,11 @@
   "scripts": {
     "start": "node server.js --open",
     "start:lan": "node server.js --open --lan",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "docker:up": "docker compose up -d --build",
+    "docker:url": "docker compose logs tunnel-quick 2>/dev/null | grep -o 'https://[a-z0-9-]*\\.trycloudflare\\.com' | tail -1",
+    "docker:logs": "docker compose logs -f selah",
+    "docker:down": "docker compose down"
   },
   "engines": {
     "node": ">=20"

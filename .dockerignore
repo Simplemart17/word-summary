@@ -1,0 +1,9 @@
+node_modules
+library
+.git
+.env
+.old
+.playwright-mcp
+.DS_Store
+Dockerfile
+compose.yaml

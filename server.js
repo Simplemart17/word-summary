@@ -33,14 +33,22 @@ import {
 import { LENGTHS, TRADITIONS, lengthOf, traditionOf } from './prompt.js';
 import { CLAUDE_BIN, EFFORT, MODEL, REVIEW, answerQuestion, reflectionFor } from './reflect.js';
 import { SPEED, VOICES, speak, voiceStatus, warm } from './voice.js';
+import { PASSWORD_MIN, PASSWORD_TOO_SHORT, PROTECTED, login, signedIn } from './auth.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
 const PORT = Number(process.env.PORT) || 4747;
 const FLAGS = new Set(process.argv.slice(2));
 // --lan lets other devices on your network (a phone, say) open the app.
+// HOST is set instead when Selah runs in a container, which has to answer
+// on every address for anything outside it to reach it.
 const LAN = FLAGS.has('--lan');
-const HOST = LAN ? '0.0.0.0' : '127.0.0.1';
+const HOST = process.env.HOST || (LAN ? '0.0.0.0' : '127.0.0.1');
+
+if (PASSWORD_TOO_SHORT) {
+  console.error(`SELAH_PASSWORD must be at least ${PASSWORD_MIN} characters. Selah has not started.`);
+  process.exit(1);
+}
 
 /* ---------- choosing a passage ---------- */
 
@@ -310,6 +318,16 @@ const routes = {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
   try {
+    // For the container's own check that it is running; it gives nothing away.
+    if (url.pathname === '/healthz') return res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+    if (PROTECTED) {
+      res.setHeader('X-Robots-Tag', 'noindex');
+      if (url.pathname === '/login') return await login(req, res);
+      if (!signedIn(req)) {
+        if (url.pathname.startsWith('/api/')) return sendJson(res, 401, { error: 'Sign in again to carry on.' });
+        return res.writeHead(303, { Location: '/login' }).end();
+      }
+    }
     const route = routes[`${req.method} ${url.pathname}`];
     if (route) return await route(req, res);
     if (req.method === 'GET' || req.method === 'HEAD') return await serveStatic(req, res, url.pathname);
@@ -329,8 +347,9 @@ server.listen(PORT, HOST, () => {
       .filter((net) => net.family === 'IPv4' && !net.internal)
       .map((net) => `http://${net.address}:${PORT}`);
     console.log(`On your phone, on the same Wi-Fi: ${others.join(' or ') || 'no network address found'}`);
-    console.log('Anyone on this network can open that address and use your Claude subscription through it.');
+    if (!PROTECTED) console.log('Anyone on this network can open that address and use your Claude subscription through it.');
   }
+  console.log(PROTECTED ? 'Password: required to open it' : 'Password: none set');
   console.log(`Reflections: Claude Code CLI (${CLAUDE_BIN}), model "${MODEL}", effort "${EFFORT}", second check ${REVIEW ? 'on' : 'off'}`);
 
   const began = Date.now();

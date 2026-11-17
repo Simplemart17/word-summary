@@ -78,6 +78,7 @@ async function request(url, body) {
     throw new Error('The Selah server is not answering. Start it again with "npm start".');
   }
   const answer = await response.json().catch(() => ({}));
+  if (response.status === 401) location.assign('/login'); // the sign-in has lapsed
   if (!response.ok) throw new Error(answer.error || `The server answered ${response.status}.`);
   return answer;
 }
@@ -258,7 +259,7 @@ async function requestReflection(ticket) {
     narrator.expect(false);
     section.replaceChildren(
       h('p', { class: 'problem' }, `The reflection could not be written. ${err.message}`),
-      h('p', { class: 'hint' }, 'Check that Claude Code is signed in by running "claude" in a terminal, then try again.'),
+      /signed in/.test(err.message) ? null : h('p', { class: 'hint' }, 'Check that Claude Code is signed in by running "claude" in a terminal, then try again.'),
       h('button', { class: 'btn', type: 'button', onclick: () => requestReflection(state.ticket) }, 'Try again'),
     );
   }

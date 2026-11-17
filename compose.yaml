@@ -1,0 +1,52 @@
+# Selah in Docker, reached from anywhere through a Cloudflare tunnel.
+#
+#   cp .env.example .env     then fill it in
+#   npm run docker:up        build and start
+#   npm run docker:url       print the public address
+#
+# The tunnel puts Selah on the public internet, so it will not start without a
+# password. Anyone who has both the address and the password can use your
+# Claude subscription through it.
+
+services:
+  selah:
+    build: .
+    restart: unless-stopped
+    environment:
+      SELAH_PASSWORD: ${SELAH_PASSWORD:?Set SELAH_PASSWORD in .env (at least 10 characters). The tunnel makes Selah public.}
+      # From "claude setup-token". Without it the app runs but cannot write reflections.
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      SELAH_MODEL: ${SELAH_MODEL:-opus}
+      SELAH_EFFORT: ${SELAH_EFFORT:-medium}
+      SELAH_REVIEW: ${SELAH_REVIEW:-on}
+    volumes:
+      # history, favourites and saved reflections live outside the container
+      - ./library:/app/library
+    ports:
+      # also reachable on this computer only, at http://localhost:4747
+      - '127.0.0.1:${SELAH_PORT:-4747}:4747'
+
+  # A quick tunnel: no Cloudflare account needed, and a new random
+  # trycloudflare.com address every time it starts.
+  tunnel-quick:
+    profiles: [quick]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://selah:4747
+    depends_on:
+      selah:
+        condition: service_healthy
+
+  # A named tunnel: a fixed address on your own domain. Create the tunnel in the
+  # Cloudflare dashboard, point its public hostname at http://selah:4747, and
+  # put its token in .env.
+  tunnel-named:
+    profiles: [named]
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      selah:
+        condition: service_healthy
