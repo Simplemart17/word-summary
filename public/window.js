@@ -31,6 +31,7 @@ const R = {
 };
 
 const BAND = { low: 0, mid: 1, high: 2 };
+const RESTING_PANES = 24; // outer panes of the window shown before any passage is open
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -187,7 +188,7 @@ export class RoseWindow {
 
     this.verses = [];
     this.panes = buildPanes({
-      verses: Array.from({ length: 24 }, (_, i) => i + 1),
+      verses: Array.from({ length: RESTING_PANES }, (_, i) => i + 1),
       seed: hashString('Selah'),
       glass: GENRES.wisdom.glass,
     });
@@ -238,6 +239,19 @@ export class RoseWindow {
   setCurrent(verse) {
     this.current = verse;
     if (verse != null) this.read.add(verse);
+  }
+
+  // Makes the resting window's own outer panes lightable and returns their
+  // numbers. The sign-in page uses this: it has no passage to draw.
+  wake() {
+    this.verses = Array.from({ length: RESTING_PANES }, (_, i) => i + 1);
+    return [...this.verses];
+  }
+
+  // Lights exactly these outer panes and no others.
+  light(verses) {
+    this.read = new Set(verses);
+    this.current = null;
   }
 
   setFlare(verses) {

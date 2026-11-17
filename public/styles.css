@@ -617,6 +617,81 @@ p {
   margin-top: 1.25rem;
 }
 
+/* ---------- the door: signing in ---------- */
+
+/* The window here is only to be looked at. */
+.door #window {
+  pointer-events: none;
+}
+
+.door .lede {
+  max-width: 22em;
+}
+
+.signin {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* or the field's natural width would widen the form */
+  gap: 0.2rem;
+  max-width: 26rem;
+  margin-top: 2.5rem;
+}
+
+/* The field and its Show button share one underline, which takes the glass colour when in use. */
+.signin-row {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  border-bottom: 1.5px solid rgb(237 228 208 / 0.3);
+  transition: border-color 0.2s;
+}
+
+.signin-row:focus-within {
+  border-bottom-color: var(--glass-ink);
+}
+
+.signin input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--step-1);
+  line-height: 1.4;
+  letter-spacing: 0.06em;
+  color: var(--vellum);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0.3rem 0 0.4rem;
+}
+
+.signin input:focus-visible {
+  outline: none; /* the underline above shows the focus */
+}
+
+.signin .link {
+  font-size: var(--step--1);
+  font-style: italic;
+}
+
+/* Always there, empty or not, so the button does not move when a message appears. */
+.signin .problem {
+  min-height: 1.7rem;
+  margin-top: 0.5rem;
+  font-size: 1.0625rem;
+  line-height: 1.7rem;
+}
+
+.signin .btn-large {
+  justify-self: start;
+  min-width: 11rem;
+  margin-top: 0.6rem;
+}
+
+/* going in */
+.leaving {
+  opacity: 0;
+  transition: opacity 0.5s ease-in;
+}
+
 /* ---------- panels: choosing, history, settings ---------- */
 
 dialog {
@@ -831,6 +906,34 @@ dialog::backdrop {
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  /* on a phone the password field should be in view without scrolling */
+  [data-view='welcome'].door .window-frame {
+    width: min(56vw, 15rem);
+  }
+
+  .door .window-side {
+    padding-top: 1.5rem;
+  }
+
+  .door .wordmark {
+    font-size: 4.5rem;
+  }
+
+  .door .lede {
+    margin-top: 1rem;
+    font-size: var(--step-0);
+  }
+
+  .signin {
+    max-width: none;
+    margin-top: 1.25rem;
+  }
+
+  .signin .btn-large {
+    justify-self: stretch;
+    margin-top: 0.3rem;
   }
 
   dialog {

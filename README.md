@@ -93,7 +93,7 @@ The app uses your Claude subscription, never an API key (`ANTHROPIC_API_KEY` is 
 | `prompt.js` | Everything Claude is told |
 | `library.js` | History, favourites, reading progress and saved reflections |
 | `voice.js`, `voice-worker.js` | The reading voice, run on its own thread |
-| `auth.js` | The password sign-in, used when `SELAH_PASSWORD` is set |
+| `auth.js`, `public/login.js` | The password sign-in and its page, used when `SELAH_PASSWORD` is set |
 | `Dockerfile`, `compose.yaml`, `.env.example` | Running in Docker behind a Cloudflare tunnel |
 | `pronunciations.json` | Respellings for names the voice gets wrong |
 | `data/` | The two translations and the section breaks |

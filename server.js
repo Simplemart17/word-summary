@@ -33,7 +33,7 @@ import {
 import { LENGTHS, TRADITIONS, lengthOf, traditionOf } from './prompt.js';
 import { CLAUDE_BIN, EFFORT, MODEL, REVIEW, answerQuestion, reflectionFor } from './reflect.js';
 import { SPEED, VOICES, speak, voiceStatus, warm } from './voice.js';
-import { PASSWORD_MIN, PASSWORD_TOO_SHORT, PROTECTED, login, signedIn } from './auth.js';
+import { OPEN_FILES, PASSWORD_MIN, PASSWORD_TOO_SHORT, PROTECTED, login, signedIn } from './auth.js';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(ROOT, 'public');
@@ -323,7 +323,7 @@ const server = createServer(async (req, res) => {
     if (PROTECTED) {
       res.setHeader('X-Robots-Tag', 'noindex');
       if (url.pathname === '/login') return await login(req, res);
-      if (!signedIn(req)) {
+      if (!signedIn(req) && !(OPEN_FILES.has(url.pathname) && (req.method === 'GET' || req.method === 'HEAD'))) {
         if (url.pathname.startsWith('/api/')) return sendJson(res, 401, { error: 'Sign in again to carry on.' });
         return res.writeHead(303, { Location: '/login' }).end();
       }

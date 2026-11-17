@@ -9,6 +9,10 @@ export const PROTECTED = PASSWORD.length > 0;
 export const PASSWORD_MIN = 10;
 export const PASSWORD_TOO_SHORT = PROTECTED && PASSWORD.length < PASSWORD_MIN;
 
+// The few files the sign-in page itself is made of. They hold no one's data,
+// so they are served before signing in; everything else waits for the password.
+export const OPEN_FILES = new Set(['/styles.css', '/window.js', '/login.js']);
+
 const COOKIE = 'selah';
 const DAYS = 30;
 const hashOf = (text) => createHash('sha256').update(text).digest();
@@ -62,6 +66,8 @@ function shutOut(req) {
 
 /* ---------- the sign-in page ---------- */
 
+// The same room as the app's opening screen, with the window unlit. It works
+// as a plain form; login.js adds the window and signs in without a page load.
 function page(message) {
   return `<!doctype html>
 <html lang="en">
@@ -71,48 +77,56 @@ function page(message) {
     <meta name="robots" content="noindex" />
     <meta name="color-scheme" content="dark" />
     <title>Selah</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%230c0f22' stroke='%2304050c' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%234d86ea' stroke-width='4'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%23f1d384'/%3E%3C/svg%3E"
+    />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Gentium+Book+Plus:ital,wght@0,400;0,700;1,400&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet" />
-    <style>
-      * { box-sizing: border-box; }
-      body {
-        margin: 0; min-height: 100dvh; display: grid; place-items: center; padding: 1.5rem;
-        background: #0c0f22; color: #ede4d0;
-        font: 1.25rem/1.6 'Gentium Book Plus', 'Iowan Old Style', Palatino, Georgia, serif;
-      }
-      main { width: min(100%, 24rem); }
-      h1 { margin: 0; font: italic 400 clamp(4.5rem, 22vw, 7rem)/0.9 'IM Fell English', Palatino, Georgia, serif; letter-spacing: -0.015em; }
-      p { margin: 1.5rem 0 0; color: rgb(237 228 208 / 0.74); }
-      form { display: grid; gap: 1rem; margin-top: 2rem; }
-      label { display: grid; gap: 0.2rem; font-size: 0.9375rem; font-style: italic; color: rgb(237 228 208 / 0.6); }
-      input {
-        font: inherit; font-style: normal; color: #ede4d0; background: transparent; width: 100%;
-        border: 0; border-bottom: 1px solid rgb(237 228 208 / 0.3); border-radius: 0; padding: 0.4rem 0;
-      }
-      button {
-        font: inherit; font-weight: 700; color: #04050c; background: #a5c0f4; cursor: pointer;
-        border: 0; border-radius: 3px; padding: 0.8rem 1.5rem; justify-self: start;
-      }
-      :focus-visible { outline: 2px solid #ede4d0; outline-offset: 3px; }
-      .problem { color: #ede4d0; }
-    </style>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/login.js"></script>
   </head>
-  <body>
-    <main>
-      <h1>Selah</h1>
-      <p>This copy of Selah is private. Enter its password to open it.</p>
-      ${message ? `<p class="problem" role="alert">${message}</p>` : ''}
-      <form method="post" action="/login">
-        <label>Password <input type="password" name="password" autocomplete="current-password" required autofocus /></label>
-        <button type="submit">Open Selah</button>
-      </form>
+  <body data-view="welcome" class="door">
+    <main class="nave">
+      <section class="window-side" aria-hidden="true">
+        <div class="window-frame">
+          <canvas id="bloom"></canvas>
+          <canvas id="window"></canvas>
+        </div>
+        <p id="caption" class="caption">A pane lights for each character you type.</p>
+      </section>
+
+      <article class="reading">
+        <div class="welcome">
+          <h1 class="wordmark">Selah</h1>
+          <p class="lede">This copy of Selah is private. Enter its password and the window lights.</p>
+
+          <form id="signin" class="signin" method="post" action="/login">
+            <label class="field" for="password"><span>Password</span></label>
+            <div class="signin-row">
+              <input id="password" name="password" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required autofocus />
+              <button id="show" class="link" type="button" aria-pressed="false" hidden>Show</button>
+            </div>
+            <p id="problem" class="problem" role="alert">${message}</p>
+            <button id="enter" class="btn btn-primary btn-large" type="submit">Open Selah</button>
+          </form>
+
+          <p class="fineprint">You stay signed in on this device for thirty days.</p>
+        </div>
+      </article>
     </main>
   </body>
 </html>`;
 }
 
-function send(res, status, message, headers = {}) {
+// The page for a browser, or a short answer for login.js.
+function reply(req, res, status, message, headers = {}) {
+  if ((req.headers.accept ?? '').includes('application/json')) {
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+    return res.end(JSON.stringify(status === 200 ? { ok: true } : { error: message }));
+  }
+  if (status === 200) return res.writeHead(303, { Location: '/', 'Cache-Control': 'no-store', ...headers }).end();
   res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
   res.end(page(message));
 }
@@ -133,30 +147,28 @@ function readForm(req) {
 export async function login(req, res) {
   if (req.method === 'GET' || req.method === 'HEAD') {
     if (signedIn(req)) return res.writeHead(303, { Location: '/' }).end();
-    return send(res, 200, '');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    return res.end(page(''));
   }
   if (req.method !== 'POST') return res.writeHead(405).end();
-  if (shutOut(req)) return send(res, 429, 'Too many wrong passwords. Wait a quarter of an hour and try again.');
+  if (shutOut(req)) return reply(req, res, 429, 'Too many wrong passwords. Wait a quarter of an hour and try again.');
 
   let given = '';
   try {
     given = (await readForm(req)).get('password') ?? '';
   } catch {
-    return send(res, 400, 'That could not be read. Try again.');
+    return reply(req, res, 400, 'That could not be read. Try again.');
   }
   if (!timingSafeEqual(hashOf(given), hashOf(PASSWORD))) {
     const address = visitor(req);
     misses.set(address, [...recent(misses.get(address)), Date.now()]);
     await new Promise((wait) => setTimeout(wait, 700)); // slow down guessing
-    return send(res, 401, 'That is not the password.');
+    return reply(req, res, 401, 'That is not the password.');
   }
 
   const expiry = Date.now() + DAYS * 86_400_000;
   const secure = req.headers['x-forwarded-proto'] === 'https' ? '; Secure' : '';
-  res.writeHead(303, {
-    Location: '/',
+  reply(req, res, 200, '', {
     'Set-Cookie': `${COOKIE}=${expiry}.${signature(expiry)}; Path=/; Max-Age=${DAYS * 86_400}; HttpOnly; SameSite=Lax${secure}`,
-    'Cache-Control': 'no-store',
   });
-  res.end();
 }
